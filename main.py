@@ -40,11 +40,62 @@ class AudioPlayer(QMainWindow):
 
     def create_ui_elements(self):
         """Create all UI elements and store them as class attributes"""
+        # Set application style
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #1a1b1e;
+                color: white;
+            }
+            QLabel {
+                color: white;
+            }
+            QPushButton {
+                background-color: transparent;
+                color: white;
+                border: none;
+                padding: 5px;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+            QListWidget {
+                background-color: #2d2e32;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 5px;
+            }
+            QComboBox {
+                background-color: #2d2e32;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 8px;
+                margin: 5px;
+            }
+            QSlider {
+                height: 20px;
+            }
+            QSlider::groove:horizontal {
+                background: #4a4a4a;
+                height: 4px;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: white;
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                margin: -4px 0;
+            }
+        """)
+        
         # Create all buttons
-        self.prev_button = QPushButton("Previous")
-        self.play_button = QPushButton("Play")
-        self.next_button = QPushButton("Next")
-        self.shuffle_button = QPushButton("Shuffle")
+        self.prev_button = QPushButton("⏮")
+        self.play_button = QPushButton("▶")
+        self.next_button = QPushButton("⏭")
+        self.shuffle_button = QPushButton("🔀")
         
         # Create sliders
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
@@ -52,53 +103,111 @@ class AudioPlayer(QMainWindow):
         self.volume_slider.setMaximum(100)
         self.volume_slider.setValue(50)
         
-        # Create other UI elements
+        # Create track information labels
+        self.track_title = QLabel("No Track Playing")
+        self.track_title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        self.track_artist = QLabel("Unknown Artist")
+        self.track_artist.setStyleSheet("font-size: 16px; color: #aaaaaa;")
+        
+        # Create time labels
+        self.time_current = QLabel("0:00")
+        self.time_total = QLabel("0:00")
+        
+        # Create playlist and genre elements
         self.playlist_widget = QListWidget()
-        self.track_info = QLabel("No track playing")
         self.genre_combo = QComboBox()
         self.genre_combo.addItem("All Genres")
         for genre in self.genres.keys():
             self.genre_combo.addItem(genre)
+            
+        # Create album art placeholder
+        self.album_art = QLabel()
+        self.album_art.setStyleSheet("""
+            QLabel {
+                background-color: #2d2e32;
+                border-radius: 20px;
+                min-width: 300px;
+                min-height: 300px;
+            }
+        """)
 
     def init_ui(self):
         """Initialize the UI layout"""
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        
+        # Left side layout (Playlist and Genre)
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Add folder button at the top
+        add_folder_btn = QPushButton("+ Add Music Folder")
+        add_folder_btn.clicked.connect(self.add_folder)
+        add_folder_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2d2e32;
+                padding: 10px;
+                border-radius: 10px;
+            }
+        """)
+        left_layout.addWidget(add_folder_btn)
         
         # Add genre selector
-        main_layout.addWidget(self.genre_combo)
+        left_layout.addWidget(self.genre_combo)
         
-        # Add playlist
-        main_layout.addWidget(self.playlist_widget)
+        # Add playlist with a label
+        playlist_label = QLabel("Playlist")
+        playlist_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-top: 20px;")
+        left_layout.addWidget(playlist_label)
+        left_layout.addWidget(self.playlist_widget)
         
-        # Add track info
-        main_layout.addWidget(self.track_info)
+        # Right side layout (Player controls)
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Add progress slider
-        main_layout.addWidget(self.progress_slider)
+        # Add album art
+        right_layout.addWidget(self.album_art, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Add track information
+        track_info_layout = QVBoxLayout()
+        track_info_layout.addWidget(self.track_title, alignment=Qt.AlignmentFlag.AlignCenter)
+        track_info_layout.addWidget(self.track_artist, alignment=Qt.AlignmentFlag.AlignCenter)
+        right_layout.addLayout(track_info_layout)
+        
+        # Add progress slider and time labels
+        progress_layout = QVBoxLayout()
+        time_layout = QHBoxLayout()
+        time_layout.addWidget(self.time_current)
+        time_layout.addStretch()
+        time_layout.addWidget(self.time_total)
+        progress_layout.addWidget(self.progress_slider)
+        progress_layout.addLayout(time_layout)
+        right_layout.addLayout(progress_layout)
         
         # Add control buttons
         controls_layout = QHBoxLayout()
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.shuffle_button)
         controls_layout.addWidget(self.prev_button)
         controls_layout.addWidget(self.play_button)
         controls_layout.addWidget(self.next_button)
-        controls_layout.addWidget(self.shuffle_button)
-        main_layout.addLayout(controls_layout)
+        controls_layout.addStretch()
+        right_layout.addLayout(controls_layout)
         
         # Add volume control
         volume_layout = QHBoxLayout()
-        volume_label = QLabel("Volume:")
+        volume_label = QLabel("🔊")
         volume_layout.addWidget(volume_label)
         volume_layout.addWidget(self.volume_slider)
-        main_layout.addLayout(volume_layout)
+        right_layout.addLayout(volume_layout)
         
-        # Create menu bar
-        menubar = self.menuBar()
-        file_menu = menubar.addMenu("File")
-        add_folder_action = file_menu.addAction("Add Folder")
-        add_folder_action.triggered.connect(self.add_folder)
+        # Add panels to main layout
+        main_layout.addWidget(left_panel, 1)  # 1 part width
+        main_layout.addWidget(right_panel, 2)  # 2 parts width
 
     def setup_connections(self):
         """Set up all signal connections"""
@@ -214,10 +323,10 @@ class AudioPlayer(QMainWindow):
     def toggle_playback(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
-            self.play_button.setText("Play")
+            self.play_button.setText("▶")
         else:
             self.player.play()
-            self.play_button.setText("Pause")
+            self.play_button.setText("⏸")
 
     def play_track(self, index):
         if 0 <= index < len(self.current_playlist):
@@ -225,8 +334,9 @@ class AudioPlayer(QMainWindow):
             track = self.current_playlist[index]
             self.player.setSource(QUrl.fromLocalFile(track['path']))
             self.player.play()
-            self.play_button.setText("Pause")
-            self.track_info.setText(f"Playing: {track['title']}")
+            self.play_button.setText("⏸")
+            self.track_title.setText(track['title'])
+            self.track_artist.setText(track['genre'])
 
     def play_next(self):
         if self.current_playlist:
