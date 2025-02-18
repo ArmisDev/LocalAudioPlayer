@@ -317,9 +317,13 @@ class AudioPlayer(QMainWindow):
         # Create and setup right panel (Player controls)
         right_panel = self._create_right_panel()
         
+        # Add panels to main layout with proper minimum widths
+        left_panel.setMinimumWidth(300)  # Set minimum width for left panel
+        right_panel.setMinimumWidth(400)  # Set minimum width for right panel
+        
         # Add panels to main layout with proper proportions
-        main_layout.addWidget(left_panel, 1)  # 1 part width
-        main_layout.addWidget(right_panel, 2)  # 2 parts width
+        main_layout.addWidget(left_panel)
+        main_layout.addWidget(right_panel, 2) 
 
     def _create_left_panel(self):
         """Create and return the left panel with playlist controls"""
@@ -331,7 +335,7 @@ class AudioPlayer(QMainWindow):
         top_buttons_layout = QHBoxLayout()
         
         # Create and style add folder button
-        add_folder_btn = QPushButton("+ Add Music Folder")
+        add_folder_btn = QPushButton("+")
         add_folder_btn.clicked.connect(self.add_folder)
         
         # Add all buttons to the top layout
@@ -356,20 +360,33 @@ class AudioPlayer(QMainWindow):
         """Create and return the right panel with player controls"""
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(20)
+        right_layout.setContentsMargins(20, 20, 20, 20)
+        right_layout.setSpacing(30)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Create a container widget for the content to allow centering
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(30)
+        content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
         # Add album art and track info
         album_container = self._create_album_container()
-        right_layout.addWidget(album_container)
+        content_layout.addWidget(album_container, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         # Add progress controls
         slider_container = self._create_slider_container()
-        right_layout.addWidget(slider_container)
+        content_layout.addWidget(slider_container)
         
         # Add playback controls
         controls_container = self._create_controls_container()
-        right_layout.addWidget(controls_container)
+        content_layout.addWidget(controls_container)
+        
+        # Add the content widget to the right panel with stretch
+        right_layout.addStretch(1)
+        right_layout.addWidget(content_widget)
+        right_layout.addStretch(1)
         
         return right_panel
 
@@ -377,31 +394,61 @@ class AudioPlayer(QMainWindow):
         """Create container for album art and track info"""
         album_container = QWidget()
         album_layout = QVBoxLayout(album_container)
-        album_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        album_layout.setContentsMargins(0, 0, 0, 0)
+        album_layout.setSpacing(20)
+        album_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
         # Add album art
-        album_layout.addWidget(self.album_art, alignment=Qt.AlignmentFlag.AlignCenter)
+        album_layout.addWidget(self.album_art, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         # Add track information
-        track_info_layout = QVBoxLayout()
+        track_info_container = QWidget()
+        track_info_layout = QVBoxLayout(track_info_container)
+        track_info_layout.setContentsMargins(0, 0, 0, 0)
         track_info_layout.setSpacing(5)
-        track_info_layout.addWidget(self.track_title, alignment=Qt.AlignmentFlag.AlignCenter)
-        track_info_layout.addWidget(self.track_artist, alignment=Qt.AlignmentFlag.AlignCenter)
-        album_layout.addLayout(track_info_layout)
+        track_info_layout.addWidget(self.track_title, alignment=Qt.AlignmentFlag.AlignHCenter)
+        track_info_layout.addWidget(self.track_artist, alignment=Qt.AlignmentFlag.AlignHCenter)
+        album_layout.addWidget(track_info_container)
         
         return album_container
 
     def _create_slider_container(self):
         """Create container for progress slider and time labels"""
         slider_container = QWidget()
+        slider_container.setMinimumWidth(400)  # Minimum width
+        slider_container.setMaximumWidth(600)  # Maximum width
         slider_layout = QVBoxLayout(slider_container)
         slider_layout.setSpacing(5)
+        slider_layout.setContentsMargins(0, 10, 0, 0)  # Added top margin for handle
         
+        # Setup progress slider
         self.progress_slider.setFixedHeight(20)
+        self.progress_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #2d2e32;
+                height: 4px;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: white;
+                width: 18px;
+                height: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
+            }
+            QSlider::add-page:horizontal {
+                background: #2d2e32;
+            }
+            QSlider::sub-page:horizontal {
+                background: #4CAF50;
+                border-radius: 2px;
+            }
+        """)
         slider_layout.addWidget(self.progress_slider)
         
         # Time labels layout
         time_layout = QHBoxLayout()
+        time_layout.setContentsMargins(0, 0, 0, 0)
         time_layout.addWidget(self.time_current)
         time_layout.addStretch()
         time_layout.addWidget(self.time_total)
@@ -412,14 +459,29 @@ class AudioPlayer(QMainWindow):
     def _create_controls_container(self):
         """Create container for playback control buttons"""
         controls_container = QWidget()
+        controls_container.setMinimumWidth(400)  # Minimum width
+        controls_container.setMaximumWidth(600)  # Maximum width
         controls_layout = QHBoxLayout(controls_container)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(30)
-        controls_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        controls_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
-        controls_layout.addWidget(self.prev_button)
-        controls_layout.addWidget(self.play_button)
-        controls_layout.addWidget(self.next_button)
-        controls_layout.addWidget(self.volume_button)
+        # Create inner container for buttons to ensure centered alignment
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(30)
+        
+        # Add buttons to the inner container
+        button_layout.addWidget(self.prev_button)
+        button_layout.addWidget(self.play_button)
+        button_layout.addWidget(self.next_button)
+        button_layout.addWidget(self.volume_button)
+        
+        # Center the button container in the main container
+        controls_layout.addStretch()
+        controls_layout.addWidget(button_container)
+        controls_layout.addStretch()
         
         return controls_container
 
