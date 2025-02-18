@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import logging
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QListWidget, QLabel, 
                            QSlider, QFileDialog, QComboBox)
@@ -117,12 +118,7 @@ class AudioPlayer(QMainWindow):
         self.play_button.setObjectName("playButton")
         self.volume_button.setObjectName("volumeButton")
         
-        # Create sliders
-        self.volume_slider = QSlider(Qt.Orientation.Vertical)
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(50)
-        self.volume_slider.setFixedHeight(100)
-        
+        # Create progress slider
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
         
         # Create track information labels
@@ -144,55 +140,77 @@ class AudioPlayer(QMainWindow):
         self.album_art = QLabel()
         self.album_art.setFixedSize(300, 300)
 
-        # Update volume slider setup
+        # Create volume slider and popup
+        self._setup_volume_controls()
+        
+        # Apply styles
+        self._apply_styles()
+
+    def _setup_volume_controls(self):
+        """Setup volume slider and popup"""
+        # Create volume slider
         self.volume_slider = QSlider(Qt.Orientation.Vertical)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(50)
         self.volume_slider.setFixedHeight(100)
+        self.volume_slider.setFixedWidth(20)  # Make the slider wider
+        self.volume_slider.setInvertedControls(True)  # Make sliding up increase volume
         self.volume_slider.setStyleSheet("""
             QSlider::groove:vertical {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                        stop:0 #4CAF50,
-                                        stop:0.5 #FFC107,
-                                        stop:1 #F44336);
-                width: 4px;
-                border-radius: 2px;
+                background: #2d2e32;
+                width: 8px;
+                border-radius: 4px;
             }
             QSlider::handle:vertical {
                 background: white;
-                height: 10px;
-                width: 10px;
-                margin: 0 -3px;
-                border-radius: 5px;
+                height: 18px;
+                width: 18px;
+                margin: -4px -5px;
+                border-radius: 9px;
+                border: 1px solid #2d2e32;
             }
-            QSlider::sub-page:vertical {
+            QSlider::add-page:vertical {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                        stop:0 rgba(76, 175, 80, 0.5),
-                                        stop:0.5 rgba(255, 193, 7, 0.5),
-                                        stop:1 rgba(244, 67, 54, 0.5));
-                border-radius: 2px;
+                                        stop:0 #4CAF50,
+                                        stop:0.5 #2196F3,
+                                        stop:1 #9C27B0);
+                width: 8px;
+                border-radius: 4px;
             }
         """)
         
-        # Create volume popup with proper styling
+        # Create volume level label
+        self.volume_label = QLabel("50%")
+        self.volume_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 12px;
+                padding: 2px;
+                background: transparent;
+                min-width: 40px;
+                text-align: center;
+            }
+        """)
+        
+        # Create volume popup
         self.volume_popup = QWidget(self)
         self.volume_popup.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.volume_popup.setStyleSheet("""
             QWidget {
-                background-color: rgba(45, 46, 50, 0.95);
+                background-color: #2d2e32;
+                border: 1px solid #3d3e42;
                 border-radius: 10px;
             }
         """)
         
-        # Setup volume popup layout
+        # Setup volume popup layout with label
         volume_popup_layout = QVBoxLayout(self.volume_popup)
         volume_popup_layout.setContentsMargins(10, 10, 10, 10)
-        volume_popup_layout.addWidget(self.volume_slider)
-        self.volume_popup.setFixedSize(40, 120)
+        volume_popup_layout.setSpacing(5)
+        volume_popup_layout.addWidget(self.volume_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        volume_popup_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.volume_popup.setFixedSize(50, 160)
         self.volume_popup.hide()
-        
-        # Apply styles
-        self._apply_styles()
         
     def _apply_styles(self):
         """Apply styles to all UI elements"""
@@ -404,34 +422,6 @@ class AudioPlayer(QMainWindow):
         controls_layout.addWidget(self.volume_button)
         
         return controls_container
-
-    def setup_connections(self):
-        """Set up all signal connections"""
-        # Connect buttons
-        self.play_button.clicked.connect(self.toggle_playback)
-        self.next_button.clicked.connect(self.play_next)
-        self.prev_button.clicked.connect(self.play_previous)
-        self.volume_button.clicked.connect(self.show_volume_popup)
-        self.refresh_button.clicked.connect(self.refresh_library)
-        self.remove_button.clicked.connect(self.remove_selected)
-        
-        # Connect sliders
-        self.volume_slider.valueChanged.connect(self.change_volume)
-        self.progress_slider.sliderMoved.connect(self.seek)
-        
-        # Connect playlist
-        self.playlist_widget.itemDoubleClicked.connect(self.playlist_double_clicked)
-        self.genre_combo.currentTextChanged.connect(self.genre_changed)
-        
-        # Connect genre selector
-        self.genre_combo.currentTextChanged.connect(self.genre_changed)
-        
-        # Connect media player signals
-        self.player.positionChanged.connect(self.position_changed)
-        self.player.durationChanged.connect(self.duration_changed)
-
-        # Set initial volume to 50%
-        self.audio_output.setVolume(0.5)
 
     def remove_selected(self):
         """Remove selected tracks or entire genre"""
@@ -769,28 +759,30 @@ class AudioPlayer(QMainWindow):
 
     def setup_connections(self):
         """Set up all signal connections"""
-        # Connect buttons
+        # Connect playback buttons
         self.play_button.clicked.connect(self.toggle_playback)
         self.next_button.clicked.connect(self.play_next)
         self.prev_button.clicked.connect(self.play_previous)
         
+        # Connect management buttons
+        self.refresh_button.clicked.connect(self.refresh_library)
+        self.remove_button.clicked.connect(self.remove_selected)
+        
         # Connect sliders
         self.progress_slider.sliderMoved.connect(self.seek)
+        self.volume_slider.valueChanged.connect(self.change_volume)
         
-        # Connect playlist
+        # Connect playlist and genre controls
         self.playlist_widget.itemDoubleClicked.connect(self.playlist_double_clicked)
-        
-        # Connect genre selector
         self.genre_combo.currentTextChanged.connect(self.genre_changed)
         
         # Connect media player signals
         self.player.positionChanged.connect(self.position_changed)
         self.player.durationChanged.connect(self.duration_changed)
         
-        # Volume control connections
+        # Connect volume controls
         self.volume_button.clicked.connect(self.show_volume_popup)
-        self.volume_slider.valueChanged.connect(self.change_volume)
-
+        
         # Set initial volume
         initial_volume = 50  # 50% volume
         self.audio_output.setVolume(initial_volume / 100.0)
@@ -801,23 +793,26 @@ class AudioPlayer(QMainWindow):
         """Show the volume slider popup near the volume button"""
         if self.volume_popup.isVisible():
             self.volume_popup.hide()
+            self.removeEventFilter(self)
             return
             
         # Get the global position of the volume button
-        button_pos = self.volume_button.mapToGlobal(self.volume_button.rect().topLeft())
+        button_pos = self.volume_button.mapToGlobal(self.volume_button.rect().center())
         
         # Position the popup above the button
-        popup_x = button_pos.x() - self.volume_popup.width()//2 + self.volume_button.width()//2
-        popup_y = button_pos.y() - self.volume_popup.height() - 10
+        popup_x = button_pos.x() - self.volume_popup.width() // 2
+        popup_y = button_pos.y() - self.volume_popup.height() - 5
         
-        # Set initial volume value
-        self.volume_slider.setValue(int(self.audio_output.volume() * 100))
+        # Set the current volume value
+        current_volume = int(self.audio_output.volume() * 100)
+        self.volume_slider.setValue(current_volume)
         
+        # Show the popup
         self.volume_popup.move(popup_x, popup_y)
         self.volume_popup.show()
         
-        # Hide popup when clicked outside
-        QTimer.singleShot(100, self.start_volume_popup_monitor)
+        # Install event filter
+        self.installEventFilter(self)
         
     def start_volume_popup_monitor(self):
         """Start monitoring for clicks outside the volume popup"""
@@ -832,9 +827,13 @@ class AudioPlayer(QMainWindow):
         return super().eventFilter(obj, event)
         
     def change_volume(self, value):
-        """Change the volume and update the icon"""
+        """Change the volume and update the icon and label"""
         volume = value / 100.0
         self.audio_output.setVolume(volume)
+        
+        # Update volume percentage label
+        self.volume_label.setText(f"{value}%")
+        
         # Update volume icon based on level
         if value == 0:
             self.volume_button.setText("🔇")
