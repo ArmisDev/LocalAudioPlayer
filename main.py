@@ -349,7 +349,7 @@ class AudioPlayer(QMainWindow):
             menu.exec(self.playlist_widget.mapToGlobal(position))
 
     def show_metadata_editor(self):
-        
+
         # Get selected track
         selected_items = self.playlist_widget.selectedItems()
         if not selected_items:
@@ -549,7 +549,10 @@ class AudioPlayer(QMainWindow):
                 background: #2d2e32;
             }
             QSlider::sub-page:horizontal {
-                background: #4CAF50;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #4CAF50,
+                                            stop:0.5 #2196F3,
+                                            stop:1 #9C27B0);
                 border-radius: 2px;
             }
         """)
