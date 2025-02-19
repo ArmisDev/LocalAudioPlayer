@@ -4,13 +4,21 @@ import json
 import logging
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QListWidget, QLabel, 
-                           QSlider, QFileDialog, QComboBox)
+                           QSlider, QFileDialog, QComboBox, QDialog, QMenu, QFormLayout, 
+                           QLineEdit, QDialogButtonBox, QMessageBox)
 from PyQt6.QtCore import Qt, QUrl, QTimer, QByteArray
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtGui import QPixmap, QImage
 from mutagen import File
+from mutagen.id3 import APIC
+from mutagen.id3 import ID3, TIT2, TPE1, APIC
 import random
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True
+)
 class AudioPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -64,29 +72,30 @@ class AudioPlayer(QMainWindow):
 
     def scan_folder(self, folder_path):
         """Scan folder for audio files with duplicate prevention"""
-        if folder_path in self.scanned_folders:
-            return
-            
+        logging.info(f"Scanning folder: {folder_path}")
+                
         supported_formats = ['.mp3', '.wav', '.flac', '.m4a', '.ogg']
         
         for root, _, files in os.walk(folder_path):
             genre = os.path.basename(root)
+            logging.info(f"Processing directory: {root} (genre: {genre})")
             
             if genre not in self.genres:
                 self.genres[genre] = []
                 self.genre_combo.addItem(genre)
             
-            existing_paths = {track['path'] for track in self.genres[genre]}
+            # Clear existing tracks for this genre
+            self.genres[genre] = []
             
             for file in files:
                 if any(file.lower().endswith(fmt) for fmt in supported_formats):
                     file_path = os.path.join(root, file)
-                    
-                    if file_path in existing_paths:
-                        continue
+                    logging.info(f"Found audio file: {file_path}")
                     
                     # Extract metadata from the file
+                    logging.info(f"Extracting metadata for: {file_path}")
                     metadata = self.extract_metadata(file_path)
+                    logging.info(f"Extracted metadata: {metadata}")
                     
                     self.genres[genre].append({
                         'path': file_path,
@@ -105,8 +114,8 @@ class AudioPlayer(QMainWindow):
         self.prev_button = QPushButton("⏮")
         self.play_button = QPushButton("▶")
         self.next_button = QPushButton("⏭")
-        self.volume_button = QPushButton("🔊")
-        self.refresh_button = QPushButton("🔄")
+        self.volume_button = QPushButton("🕨")
+        self.refresh_button = QPushButton("↺")
         self.remove_button = QPushButton("🗑")
         
         # Set button tooltips
@@ -145,6 +154,9 @@ class AudioPlayer(QMainWindow):
         
         # Apply styles
         self._apply_styles()
+        self.clear_button = QPushButton("🗑️")
+        self.clear_button.setToolTip("Clear Library")
+        self.clear_button.clicked.connect(self.clear_library)
 
     def _setup_volume_controls(self):
         """Setup volume slider and popup"""
@@ -325,6 +337,102 @@ class AudioPlayer(QMainWindow):
         main_layout.addWidget(left_panel)
         main_layout.addWidget(right_panel, 2) 
 
+    def create_context_menu(self, position):
+        menu = QMenu(self)  # Add parent
+        selected_items = self.playlist_widget.selectedItems()
+        
+        if selected_items:
+            edit_metadata = menu.addAction("Edit Metadata")
+            edit_metadata.triggered.connect(self.show_metadata_editor)
+            
+            # Change menu.exec to specify position
+            menu.exec(self.playlist_widget.mapToGlobal(position))
+
+    def show_metadata_editor(self):
+        
+        # Get selected track
+        selected_items = self.playlist_widget.selectedItems()
+        if not selected_items:
+            return
+            
+        track_index = self.playlist_widget.row(selected_items[0])
+        track = self.current_playlist[track_index]
+        
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Track Metadata")
+        layout = QFormLayout()
+        
+        # Create input fields
+        title_input = QLineEdit(track.get('title', ''))
+        artist_input = QLineEdit(track.get('artist', ''))
+        image_path = QLineEdit()
+        
+        # Add browse button for image
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(lambda: image_path.setText(
+            QFileDialog.getOpenFileName(dialog, "Select Album Art", "", "Images (*.png *.jpg)")[0]
+        ))
+        
+        image_layout = QHBoxLayout()
+        image_layout.addWidget(image_path)
+        image_layout.addWidget(browse_button)
+        
+        # Add fields to layout
+        layout.addRow("Title:", title_input)
+        layout.addRow("Artist:", artist_input)
+        layout.addRow("Album Art:", image_layout)
+        
+        # Add buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        
+        dialog.setLayout(layout)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Update metadata using mutagen
+            try:
+                # Load or create ID3 tags
+                try:
+                    audio = ID3(track['path'])
+                except:
+                    audio = ID3()
+                    
+                # Update title
+                if title_input.text():
+                    audio['TIT2'] = TIT2(encoding=3, text=title_input.text())
+                
+                # Update artist
+                if artist_input.text():
+                    audio['TPE1'] = TPE1(encoding=3, text=artist_input.text())
+                
+                # Update album art
+                if image_path.text():
+                    with open(image_path.text(), 'rb') as img:
+                        img_data = img.read()
+                        audio['APIC:'] = APIC(
+                            encoding=3,
+                            mime='image/jpeg',
+                            type=3,
+                            desc='Cover',
+                            data=img_data
+                        )
+                
+                # Save changes to file
+                audio.save(track['path'])
+                
+                # Refresh the track in the library
+                self.refresh_library()
+                
+                QMessageBox.information(self, "Success", "Metadata updated successfully!")
+                
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to update metadata: {str(e)}")
+
     def _create_left_panel(self):
         """Create and return the left panel with playlist controls"""
         left_panel = QWidget()
@@ -341,7 +449,7 @@ class AudioPlayer(QMainWindow):
         # Add all buttons to the top layout
         top_buttons_layout.addWidget(add_folder_btn)
         top_buttons_layout.addWidget(self.refresh_button)
-        top_buttons_layout.addWidget(self.remove_button)
+        top_buttons_layout.addWidget(self.clear_button)
         
         left_layout.addLayout(top_buttons_layout)
         
@@ -419,7 +527,7 @@ class AudioPlayer(QMainWindow):
         slider_container.setMaximumWidth(600)  # Maximum width
         slider_layout = QVBoxLayout(slider_container)
         slider_layout.setSpacing(5)
-        slider_layout.setContentsMargins(0, 10, 0, 0)  # Added top margin for handle
+        slider_layout.setContentsMargins(10, 0, 10, 0)  # Increased margins to account for slider handle
         
         # Setup progress slider
         self.progress_slider.setFixedHeight(20)
@@ -428,12 +536,13 @@ class AudioPlayer(QMainWindow):
                 background: #2d2e32;
                 height: 4px;
                 border-radius: 2px;
+                margin: 0 9px;  /* Half the handle width to prevent overflow */
             }
             QSlider::handle:horizontal {
                 background: white;
                 width: 18px;
                 height: 18px;
-                margin: -7px 0;
+                margin: -7px -9px;  /* Negative margin to compensate for handle width */
                 border-radius: 9px;
             }
             QSlider::add-page:horizontal {
@@ -446,9 +555,24 @@ class AudioPlayer(QMainWindow):
         """)
         slider_layout.addWidget(self.progress_slider)
         
-        # Time labels layout
+        # Time labels layout with proper alignment
         time_layout = QHBoxLayout()
         time_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Style time labels
+        self.time_current.setStyleSheet("""
+            QLabel {
+                min-width: 50px;  /* Ensure enough space for "60:00" */
+                color: #aaaaaa;
+            }
+        """)
+        self.time_total.setStyleSheet("""
+            QLabel {
+                min-width: 50px;  /* Ensure enough space for "60:00" */
+                color: #aaaaaa;
+            }
+        """)
+        
         time_layout.addWidget(self.time_current)
         time_layout.addStretch()
         time_layout.addWidget(self.time_total)
@@ -614,54 +738,47 @@ class AudioPlayer(QMainWindow):
         """Update the album art display with new image data"""
         if album_art_data:
             try:
-                qimg = QImage.fromData(QByteArray(album_art_data))
+                logging.info(f"Attempting to display album art, data size: {len(album_art_data)} bytes")
+                
+                # Convert the bytes to QByteArray
+                byte_array = QByteArray(album_art_data)
+                
+                # Create QImage from the data
+                qimg = QImage.fromData(byte_array)
+                if qimg.isNull():
+                    logging.error("Failed to create QImage from album art data")
+                    self.set_default_album_art()
+                    return
+                
+                logging.info(f"Created QImage: {qimg.width()}x{qimg.height()}")
+                
+                # Create and scale pixmap
                 pixmap = QPixmap.fromImage(qimg)
-                scaled_pixmap = pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio, 
-                                            Qt.TransformationMode.SmoothTransformation)
+                scaled_pixmap = pixmap.scaled(
+                    300, 300,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                # Set the pixmap and style
                 self.album_art.setPixmap(scaled_pixmap)
+                self.album_art.setText("")  # Clear any text (e.g., the music note)
                 self.album_art.setStyleSheet("""
                     QLabel {
                         background-color: #2d2e32;
                         border-radius: 20px;
                         min-width: 300px;
                         min-height: 300px;
+                        padding: 10px;
                     }
                 """)
+                logging.info("Successfully set album art")
             except Exception as e:
-                print(f"Error setting album art: {e}")
+                logging.error(f"Error setting album art: {e}", exc_info=True)
                 self.set_default_album_art()
         else:
+            logging.info("No album art data provided, setting default")
             self.set_default_album_art()
-        if folder_path in self.scanned_folders:
-            return
-            
-        supported_formats = ['.mp3', '.wav', '.flac', '.m4a', '.ogg']
-        
-        for root, _, files in os.walk(folder_path):
-            genre = os.path.basename(root)
-            
-            if genre not in self.genres:
-                self.genres[genre] = []
-                self.genre_combo.addItem(genre)
-            
-            existing_paths = {track['path'] for track in self.genres[genre]}
-            
-            for file in files:
-                if any(file.lower().endswith(fmt) for fmt in supported_formats):
-                    file_path = os.path.join(root, file)
-                    
-                    if file_path in existing_paths:
-                        continue
-                    
-                    self.genres[genre].append({
-                        'path': file_path,
-                        'title': os.path.splitext(file)[0],
-                        'genre': genre
-                    })
-        
-        self.scanned_folders.add(folder_path)
-        self.update_playlist()
-        self.save_data()
 
     def add_folder(self):
         """Open file dialog to select and add a music folder"""
@@ -672,6 +789,7 @@ class AudioPlayer(QMainWindow):
     def extract_metadata(self, file_path):
         """Extract metadata from audio file including artist and album art"""
         try:
+            logging.info(f"\n{'='*50}\nExtracting metadata from: {file_path}")
             audio = File(file_path)
             
             # Default metadata
@@ -682,31 +800,55 @@ class AudioPlayer(QMainWindow):
             }
             
             if audio is not None:
-                # Extract title and artist based on file type
-                if hasattr(audio, 'tags'):
-                    # MP3 (ID3) tags
+                logging.info(f"Audio file type: {type(audio).__name__}")
+                
+                if hasattr(audio, 'tags') and audio.tags:
+                    # Get all available tags for debugging
+                    all_tags = list(audio.tags.keys())
+                    logging.info(f"All available tags: {all_tags}")
+                    
+                    # Look for APIC tags
+                    apic_candidates = [tag for tag in all_tags if 'APIC' in str(tag)]
+                    logging.info(f"Found APIC candidates: {apic_candidates}")
+                    
+                    # Try to get album art
+                    if apic_candidates:
+                        for key in apic_candidates:
+                            try:
+                                apic_tag = audio.tags[key]
+                                logging.info(f"Attempting to read APIC tag: {key}")
+                                logging.info(f"APIC tag type: {type(apic_tag)}")
+                                
+                                # Try to access the image data
+                                if hasattr(apic_tag, 'data'):
+                                    metadata['album_art'] = apic_tag.data
+                                    logging.info(f"Successfully extracted album art data: {len(metadata['album_art'])} bytes")
+                                    # Log the first few bytes for debugging
+                                    logging.info(f"First 20 bytes of image data: {metadata['album_art'][:20]}")
+                                    break
+                                else:
+                                    logging.warning(f"APIC tag {key} has no 'data' attribute")
+                            except Exception as e:
+                                logging.error(f"Error reading APIC tag {key}: {e}")
+                    else:
+                        logging.warning("No APIC tags found")
+                    
+                    # Get other metadata
                     if 'TIT2' in audio:
                         metadata['title'] = str(audio['TIT2'])
                     if 'TPE1' in audio:
                         metadata['artist'] = str(audio['TPE1'])
-                    # Extract album art
-                    if 'APIC:' in audio:
-                        metadata['album_art'] = audio['APIC:'].data
-                    elif 'APIC' in audio:
-                        metadata['album_art'] = audio['APIC'].data
-                elif hasattr(audio, 'metadata'):
-                    # FLAC/OGG metadata
-                    if 'title' in audio.metadata[0]:
-                        metadata['title'] = str(audio.metadata[0]['title'][0])
-                    if 'artist' in audio.metadata[0]:
-                        metadata['artist'] = str(audio.metadata[0]['artist'][0])
-                    # Extract album art from FLAC/OGG
-                    if hasattr(audio, 'pictures') and audio.pictures:
-                        metadata['album_art'] = audio.pictures[0].data
-            
+                    if 'TCON' in audio:
+                        logging.info(f"Genre: {str(audio['TCON'])}")
+                
+                logging.info(f"Final metadata state:")
+                logging.info(f"  Title: {metadata['title']}")
+                logging.info(f"  Artist: {metadata['artist']}")
+                logging.info(f"  Has Album Art: {metadata['album_art'] is not None}")
+                
             return metadata
         except Exception as e:
-            print(f"Error extracting metadata from {file_path}: {e}")
+            logging.error(f"Error extracting metadata: {str(e)}", exc_info=True)
             return {
                 'title': os.path.splitext(os.path.basename(file_path))[0],
                 'artist': 'Unknown Artist',
@@ -740,34 +882,51 @@ class AudioPlayer(QMainWindow):
         """Update the album art display with new image data"""
         if album_art_data:
             try:
-                qimg = QImage.fromData(QByteArray(album_art_data))
-                pixmap = QPixmap.fromImage(qimg)
+                logging.info(f"Attempting to display album art, data size: {len(album_art_data)} bytes")
+                logging.info(f"First 20 bytes of image data: {album_art_data[:20]}")
                 
-                # Scale the pixmap while maintaining aspect ratio
+                # Convert the bytes to QByteArray
+                byte_array = QByteArray(album_art_data)
+                logging.info(f"Created QByteArray, size: {byte_array.size()}")
+                
+                # Create QImage from the data
+                qimg = QImage.fromData(byte_array)
+                if qimg.isNull():
+                    logging.error("Failed to create QImage from album art data")
+                    self.set_default_album_art()
+                    return
+                
+                logging.info(f"Successfully created QImage: {qimg.width()}x{qimg.height()}")
+                
+                # Create and scale pixmap
+                pixmap = QPixmap.fromImage(qimg)
                 scaled_pixmap = pixmap.scaled(
                     300, 300,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 )
                 
-                # Create a new pixmap with fixed size and rounded corners
-                display_pixmap = QPixmap(300, 300)
-                display_pixmap.fill(Qt.GlobalColor.transparent)
+                # Clear any existing content
+                self.album_art.clear()
                 
-                # Set the scaled image
+                # Set the pixmap and style
                 self.album_art.setPixmap(scaled_pixmap)
+                self.album_art.setText("")  # Clear any text (e.g., the music note)
                 self.album_art.setStyleSheet("""
                     QLabel {
                         background-color: #2d2e32;
                         border-radius: 20px;
                         min-width: 300px;
                         min-height: 300px;
+                        padding: 10px;
                     }
                 """)
+                logging.info("Successfully set album art")
             except Exception as e:
-                print(f"Error setting album art: {e}")
+                logging.error(f"Error setting album art: {e}", exc_info=True)
                 self.set_default_album_art()
         else:
+            logging.info("No album art data provided, setting default")
             self.set_default_album_art()
 
     def play_track(self, index):
@@ -775,6 +934,8 @@ class AudioPlayer(QMainWindow):
         if 0 <= index < len(self.current_playlist):
             self.current_index = index
             track = self.current_playlist[index]
+            logging.info(f"Playing track: {track['path']}")
+            logging.info(f"Track metadata: {track}")
             
             # Set the source and play
             self.player.setSource(QUrl.fromLocalFile(track['path']))
@@ -782,13 +943,19 @@ class AudioPlayer(QMainWindow):
             self.play_button.setText("⏸")
             
             # Update track information with fallbacks
-            self.track_title.setText(track.get('title', os.path.splitext(os.path.basename(track['path']))[0]))
-            self.track_artist.setText(track.get('artist', 'Unknown Artist'))
+            title = track.get('title', os.path.splitext(os.path.basename(track['path']))[0])
+            artist = track.get('artist', 'Unknown Artist')
+            logging.info(f"Setting title: {title}, artist: {artist}")
+            
+            self.track_title.setText(title)
+            self.track_artist.setText(artist)
             
             # Update album art
             if 'album_art' in track and track['album_art']:
+                logging.info("Found album art in track metadata, attempting to display")
                 self.update_album_art(track['album_art'])
             else:
+                logging.info("No album art found in track metadata, using default")
                 self.set_default_album_art()
 
     def play_next(self):
@@ -837,6 +1004,8 @@ class AudioPlayer(QMainWindow):
         # Connect playlist and genre controls
         self.playlist_widget.itemDoubleClicked.connect(self.playlist_double_clicked)
         self.genre_combo.currentTextChanged.connect(self.genre_changed)
+        self.playlist_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.playlist_widget.customContextMenuRequested.connect(self.create_context_menu)
         
         # Connect media player signals
         self.player.positionChanged.connect(self.position_changed)
@@ -915,6 +1084,14 @@ class AudioPlayer(QMainWindow):
         minutes = seconds // 60
         seconds = seconds % 60
         return f"{minutes}:{seconds:02d}"
+    
+    def clear_library(self):
+        """Clear all saved data and rescan library"""
+        self.genres.clear()
+        self.scanned_folders.clear()
+        self.genre_combo.clear()
+        self.genre_combo.addItem("All Genres")
+        self.save_data()  # Save empty state
 
     def position_changed(self, position):
         """Handle position changes in the currently playing track"""
