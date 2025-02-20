@@ -116,12 +116,11 @@ class AudioPlayer(QMainWindow):
         self.next_button = QPushButton("⏭")
         self.volume_button = QPushButton("🕨")
         self.refresh_button = QPushButton("↺")
-        self.remove_button = QPushButton("🗑")
+        self.clear_button = QPushButton("-")
         
         # Set button tooltips
         self.volume_button.setToolTip("Volume")
         self.refresh_button.setToolTip("Refresh Library")
-        self.remove_button.setToolTip("Remove Selected")
         
         # Set object names for specific styling
         self.play_button.setObjectName("playButton")
@@ -154,9 +153,6 @@ class AudioPlayer(QMainWindow):
         
         # Apply styles
         self._apply_styles()
-        self.clear_button = QPushButton("🗑️")
-        self.clear_button.setToolTip("Clear Library")
-        self.clear_button.clicked.connect(self.clear_library)
 
     def _setup_volume_controls(self):
         """Setup volume slider and popup"""
@@ -191,37 +187,51 @@ class AudioPlayer(QMainWindow):
             }
         """)
         
-        # Create volume level label
+        # Create volume level label with fixed width to match popup
         self.volume_label = QLabel("50%")
+        self.volume_label.setFixedWidth(30)
+        self.volume_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.volume_label.setStyleSheet("""
             QLabel {
                 color: white;
                 font-size: 12px;
-                padding: 2px;
                 background: transparent;
-                min-width: 40px;
-                text-align: center;
+                padding: 2px 0px;
             }
         """)
         
         # Create volume popup
         self.volume_popup = QWidget(self)
-        self.volume_popup.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-        self.volume_popup.setStyleSheet("""
+        self.volume_popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.volume_popup.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+        self.volume_popup.setAutoFillBackground(False)
+        
+        # Create an inner widget for the gradient background
+        self.volume_popup_inner = QWidget(self.volume_popup)
+        self.volume_popup_inner.setStyleSheet("""
             QWidget {
-                background-color: #2d2e32;
-                border: 1px solid #3d3e42;
-                border-radius: 10px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(45, 46, 50, 0.95),
+                    stop:0.8 rgba(45, 46, 50, 0.95),
+                    stop:1 rgba(45, 46, 50, 0));
+                border-radius: 12px;
             }
         """)
         
-        # Setup volume popup layout with label
-        volume_popup_layout = QVBoxLayout(self.volume_popup)
-        volume_popup_layout.setContentsMargins(10, 10, 10, 10)
-        volume_popup_layout.setSpacing(5)
-        volume_popup_layout.addWidget(self.volume_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        volume_popup_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        # Setup inner widget layout
+        inner_layout = QVBoxLayout(self.volume_popup_inner)
+        inner_layout.setContentsMargins(15, 15, 15, 25)
+        inner_layout.setSpacing(5)
+        inner_layout.addWidget(self.volume_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        inner_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Setup main popup layout
+        popup_layout = QVBoxLayout(self.volume_popup)
+        popup_layout.setContentsMargins(0, 0, 0, 0)
+        popup_layout.addWidget(self.volume_popup_inner)
+        
         self.volume_popup.setFixedSize(50, 160)
+        self.volume_popup_inner.setFixedSize(50, 160)
         self.volume_popup.hide()
         
     def _apply_styles(self):
@@ -523,8 +533,8 @@ class AudioPlayer(QMainWindow):
     def _create_slider_container(self):
         """Create container for progress slider and time labels"""
         slider_container = QWidget()
-        slider_container.setMinimumWidth(400)  # Minimum width
-        slider_container.setMaximumWidth(600)  # Maximum width
+        slider_container.setMinimumWidth(300)  # Minimum width
+        slider_container.setMaximumWidth(600)
         slider_layout = QVBoxLayout(slider_container)
         slider_layout.setSpacing(5)
         slider_layout.setContentsMargins(10, 0, 10, 0)  # Increased margins to account for slider handle
@@ -565,13 +575,13 @@ class AudioPlayer(QMainWindow):
         # Style time labels
         self.time_current.setStyleSheet("""
             QLabel {
-                min-width: 50px;  /* Ensure enough space for "60:00" */
+                min-width: 20px;  /* Ensure enough space for "60:00" */
                 color: #aaaaaa;
             }
         """)
         self.time_total.setStyleSheet("""
             QLabel {
-                min-width: 50px;  /* Ensure enough space for "60:00" */
+                min-width: 20px;  /* Ensure enough space for "60:00" */
                 color: #aaaaaa;
             }
         """)
@@ -886,11 +896,9 @@ class AudioPlayer(QMainWindow):
         if album_art_data:
             try:
                 logging.info(f"Attempting to display album art, data size: {len(album_art_data)} bytes")
-                logging.info(f"First 20 bytes of image data: {album_art_data[:20]}")
                 
                 # Convert the bytes to QByteArray
                 byte_array = QByteArray(album_art_data)
-                logging.info(f"Created QByteArray, size: {byte_array.size()}")
                 
                 # Create QImage from the data
                 qimg = QImage.fromData(byte_array)
@@ -901,27 +909,53 @@ class AudioPlayer(QMainWindow):
                 
                 logging.info(f"Successfully created QImage: {qimg.width()}x{qimg.height()}")
                 
-                # Create and scale pixmap
+                # Create and scale pixmap to fill the entire area
                 pixmap = QPixmap.fromImage(qimg)
                 scaled_pixmap = pixmap.scaled(
                     300, 300,
-                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,  # Changed to ByExpanding
                     Qt.TransformationMode.SmoothTransformation
                 )
                 
-                # Clear any existing content
-                self.album_art.clear()
+                # If the scaled image is larger than our target size, crop it from the center
+                if scaled_pixmap.width() > 300 or scaled_pixmap.height() > 300:
+                    center_x = (scaled_pixmap.width() - 300) // 2
+                    center_y = (scaled_pixmap.height() - 300) // 2
+                    scaled_pixmap = scaled_pixmap.copy(
+                        center_x, center_y, 300, 300
+                    )
                 
                 # Set the pixmap and style
                 self.album_art.setPixmap(scaled_pixmap)
                 self.album_art.setText("")  # Clear any text (e.g., the music note)
+                # Create rounded pixmap by using a QPainter
+                from PyQt6.QtGui import QPainter, QPainterPath, QRegion
+                
+                # Create a new pixmap with transparent background
+                rounded_pixmap = QPixmap(300, 300)
+                rounded_pixmap.fill(Qt.GlobalColor.transparent)
+                
+                # Create painter and path for rounded rectangle
+                painter = QPainter(rounded_pixmap)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                path = QPainterPath()
+                path.addRoundedRect(0, 0, 300, 300, 12, 12)
+                
+                # Set the clip path and draw the original pixmap
+                painter.setClipPath(path)
+                painter.drawPixmap(0, 0, scaled_pixmap)
+                painter.end()
+                
+                # Set the final rounded pixmap
+                self.album_art.setPixmap(rounded_pixmap)
+                self.album_art.setText("")  # Clear any text (e.g., the music note)
                 self.album_art.setStyleSheet("""
                     QLabel {
                         background-color: #2d2e32;
-                        border-radius: 20px;
                         min-width: 300px;
                         min-height: 300px;
-                        padding: 10px;
+                        padding: 0px;
                     }
                 """)
                 logging.info("Successfully set album art")
@@ -998,7 +1032,8 @@ class AudioPlayer(QMainWindow):
         
         # Connect management buttons
         self.refresh_button.clicked.connect(self.refresh_library)
-        self.remove_button.clicked.connect(self.remove_selected)
+        self.clear_button.setToolTip("Clear Library")
+        self.clear_button.clicked.connect(self.clear_library)
         
         # Connect sliders
         self.progress_slider.sliderMoved.connect(self.seek)
