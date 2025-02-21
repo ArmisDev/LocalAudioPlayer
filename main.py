@@ -161,7 +161,7 @@ class AudioPlayer(QMainWindow):
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(50)
         self.volume_slider.setFixedHeight(100)
-        self.volume_slider.setFixedWidth(20)  # Make the slider wider
+        self.volume_slider.setFixedWidth(20)  # Keep slider width unchanged
         self.volume_slider.setInvertedControls(True)  # Make sliding up increase volume
         self.volume_slider.setStyleSheet("""
             QSlider::groove:vertical {
@@ -187,9 +187,8 @@ class AudioPlayer(QMainWindow):
             }
         """)
         
-        # Create volume level label with fixed width to match popup
-        self.volume_label = QLabel("50%")
-        self.volume_label.setFixedWidth(30)
+        # Create volume level label
+        self.volume_label = QLabel("100%")  # Initialize with widest text
         self.volume_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.volume_label.setStyleSheet("""
             QLabel {
@@ -197,6 +196,8 @@ class AudioPlayer(QMainWindow):
                 font-size: 12px;
                 background: transparent;
                 padding: 2px 0px;
+                min-width: 50px;
+                margin-left: -9px;  /* Shift the text slightly left */
             }
         """)
         
@@ -220,18 +221,27 @@ class AudioPlayer(QMainWindow):
         
         # Setup inner widget layout
         inner_layout = QVBoxLayout(self.volume_popup_inner)
-        inner_layout.setContentsMargins(15, 15, 15, 25)
+        inner_layout.setContentsMargins(10, 15, 10, 25)  # Keep horizontal margins reasonable
         inner_layout.setSpacing(5)
-        inner_layout.addWidget(self.volume_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        inner_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignCenter)
+        # Use a custom alignment to position the label slightly left of center
+        inner_layout.addWidget(self.volume_label)
+        inner_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         # Setup main popup layout
         popup_layout = QVBoxLayout(self.volume_popup)
         popup_layout.setContentsMargins(0, 0, 0, 0)
         popup_layout.addWidget(self.volume_popup_inner)
         
-        self.volume_popup.setFixedSize(50, 160)
-        self.volume_popup_inner.setFixedSize(50, 160)
+        # Set popup size - not too wide but enough for text
+        popup_width = 50  # Balanced size between too narrow and too wide
+        popup_height = 160
+        
+        self.volume_popup.setFixedSize(popup_width, popup_height)
+        self.volume_popup_inner.setFixedSize(popup_width, popup_height)
+        
+        # Set initial "50%" text
+        self.volume_label.setText("50%")
+        
         self.volume_popup.hide()
         
     def _apply_styles(self):
